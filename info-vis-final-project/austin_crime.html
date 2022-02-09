@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Austin Crime Dataset</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script src="https://d3js.org/d3-path.v2.min.js"></script>
+    <script src="https://d3js.org/d3-shape.v2.min.js"></script>
+    <script src="https://d3js.org/topojson.v1.min.js"></script>
+    <script src="https://d3js.org/d3-array.v2.min.js"></script>
+    <script src="https://d3js.org/d3-geo.v2.min.js"></script>
+    <script src="https://d3js.org/d3-geo-projection.v3.min.js"></script>
+    <script src="https://d3js.org/d3-scale-chromatic.v2.min.js"></script> 
+    <script src="https://unpkg.com/react/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/babel-standalone/babel.js"></script>
+    <link rel="stylesheet" href="styles.css" > 
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+    const mapURL = "council_map.geojson"
+    const csvURL = "Annual_Crime_Dataset.csv"
+
+    // Clearance Date: "28-Jan-15"
+    // Clearance Status: "N"
+    // Council District: "4.0"
+    // GO Census Tract: "18.13"
+    // GO District: "E"
+    // GO Highest Offense Desc: "AGG ROBBERY/DEADLY WEAPON     "
+    // GO Location: "9001 N IH 35 SVRD NB                                                                                "
+    // GO Location Zip: "78753.0"
+    // GO Primary Key: "201,510,782"
+    // GO Report Date: "1-Jan-15"
+    // GO X Coordinate: "3130483.0"
+    // GO Y Coordinate: "10102366.0"
+    // Highest NIBRS/UCR Offense Description: "Robbery"
+    // Latitude: "30.35386348088982"
+    // Longitude: "-97.68923639
+    
+    function useData(csvPath){
+        const [dataAll, setData] = React.useState(null);
+        React.useEffect(() => {
+            d3.csv(csvPath).then(data => {
+                data.forEach(d => {
+                    d['GO X Coordinate'] = +d['GO X Coordinate'];
+                    d['GO Y Coordinate'] = +d['GO Y Coordinate'];
+                    d['Council District'] = +d['Council District'];
+                });
+                setData(data);
+            });
+        }, []);
+        return dataAll;
+    }
+
+    function useMap(jsonPath) {
+        const [data, setData] = React.useState(null);
+        React.useEffect(() => {
+            d3.json(jsonPath).then(geoJsonData => {
+                setData(geoJsonData);
+            })
+        }, []);
+        return data;
+    }
+    function TheMap(props) {
+        const {x, y, map, data, height, width, selectedDistrict, setSelectedDistrict} = props;
+        const projection = d3.geoMercator().fitSize([width, height], map);
+        const path = d3.geoPath(projection);
+        const radius = d3.scaleLinear().range([2, 20])
+            .domain([d3.min(data, d => d.start), d3.max(data, d => d.start)]);
+
+        //use array to save event number in each district
+        let district_crime = new Array(11).fill(0);
+        data.map(d=>{
+            let ind = d["Council District"];
+            district_crime[ind]+=1;
+        })
+        //colorscale
+        const harm_color = d3
+          .scaleSequential()
+          .domain([d3.min(district_crime.slice(1,11)), d3.max(district_crime.slice(1,11))])
+          .interpolator(d3.interpolate("#ffcfcc", "#ad0a00"));
+        const getColor = (selectedDistrict, district) => {
+            return selectedDistrict&&district===selectedDistrict ? "steelblue" : harm_color(district_crime[district]);
+        }
+        return <g transform={`translate(${x}, ${y})`}>
+            {map.features.map((feature, idx) => {
+                return <path key={idx+"boundary"} className={"boundary"} d={path(feature)} fill={getColor(selectedDistrict, feature.properties["council_district"])} opacity={0.9} onMouseDown={(event)=>{
+                    setSelectedDistrict(feature.properties["council_district"]);
+                }} onMouseOut={()=>{
+                    // setSelectedDistrict(null);
+                }}/>
+            })}
+            {data.map(d=>{
+                const [x,y] = projection([d.Longitude, d.Latitude]);
+                return <circle key={d["GO Primary Key"]} cx={x} cy={y} r={1.5} opacity={0.7} fill={"black"} pointerEvents={'none'}/>
+            })}
+            </g>
+    }
+    
+    function Cell({ d, xScale, yScale, color }){
+        //console.log(xScale(d.month));
+        return <g transform={`translate(${xScale(Math.floor(d/7))}, ${yScale(d%7)})`} >
+            <rect width={xScale.bandwidth()} height={yScale.bandwidth()} fill={color} />
+            </g>
+    }
+
+    function HeatMap(props){
+        const {x, y, data, height, width, crimetypes, mincolor} = props;
+        const crimedata = data.filter(d=>{
+            return crimetypes.indexOf(d["Highest NIBRS/UCR Offense Description"]) != -1;
+        })
+        //console.log('testing', crimetypes);
+        let daytocrime = {};
+        crimedata.map(d=>{
+            let key = d["GO Report Date"];
+            if(!(key in daytocrime)){
+                daytocrime[key]= 1;
+            }else{
+                daytocrime[key]+=1;
+            }
+        })
+        let dayvalues = [];
+        for (const [key, value] of Object.entries(daytocrime)) {
+            dayvalues.push({'date':d3.timeDay(new Date(key)), 'count':value});
+        }
+        dayvalues.sort((a,b)=> new Date(a.date)-new Date(b.date));
+        // get maxium crime number 
+        let daytocrimeAll = {};
+        data.map(d=>{
+            let key = d["GO Report Date"];
+            if(!(key in daytocrimeAll)){
+                daytocrimeAll[key]= 1;
+            }else{
+                daytocrimeAll[key]+=1;
+            }
+        })
+        let dayvaluesAll = [];
+        for (const [key, value] of Object.entries(daytocrimeAll)) {
+            dayvaluesAll.push({'date':d3.timeDay(new Date(key)), 'count':value});
+        }
+        const values = dayvaluesAll.map(c => c.count);
+        const maxValue = d3.max(values);
+        const minValue = 0;
+
+        const cellSize = 15;
+        const yearHeight = cellSize * 7;
+        //split weeks and days
+        const weekday = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+        const weeknum = 53;
+        const weeks = [...Array(weeknum).keys()];
+        const daynum = 7;
+        const days = [...Array(daynum).keys()];
+        const xScale = d3.scaleBand().range([0,width]).domain(weeks);
+        const yScale = d3.scaleBand().range([0,height]).domain(days);
+        //color scale
+        const colorScale = d3.schemeBlues[9];
+        const mycolor = (startval) =>{
+            return colorScale.slice(startval);
+        }
+        console.log(d3.interpolateGnBu);
+        const newcolor = () =>{
+            d3.interpolateGnBu;
+        }
+        const getColor = d3.scaleSequential(t => d3.hsl(195, t*1.5-mincolor*0.1, t*1-mincolor*0.1).toString()).domain([maxValue, minValue]);
+
+        // const getColor = d3.scaleSequential(t => d3.hsl(195, t*1.5, t*1).toString()).domain([maxValue, minValue]);
+        
+
+        return <g transform={`translate(${x}, ${y})`}>
+                {dayvalues.map((d,ind) =>{
+                    return <Cell key={d.date+d.count} d={ind+3} xScale={xScale} yScale={yScale} 
+                    color={getColor(d.count)} />
+                })}
+                {days.map(num => {
+                    return <text key={num} style={{textAnchor:'middle'}} x={-30} y={yScale(num)+15}>{weekday[num]}</text>
+                })}
+            </g>
+
+    }
+
+    function getTimeGroup( d ){
+        
+        if (d.Duration < 50) {
+            return "Duration: [0, 50]"
+        }
+        if (50 <= d.Duration && d.Duration < 100) {
+            return "Duration:[50, 100]"
+        }
+        if (100 <= d.Duration && d.Duration < 150) {
+            return "Duration:[100, 150]"
+        }
+        if (150 <= d.Duration && d.Duration < 200) {
+            return "Duration:[150, 200]"
+        }
+        if (200 <= d.Duration) {
+            return "Duration: Greater than 200"
+        }
+        
+    }
+
+    function TreeMapText(props) {
+        const { d } = props;
+        return <foreignObject width={d.x1-d.x0} height={d.y1-d.y0}>
+            <div style={{fontSize:"10px"}}>
+                
+                <p style={{fontSize:"10px"}}> 
+                    {d.ancestors().reverse().slice(1).map((d, idx) =>  {
+                        //console.log(d.data.avgD);
+                        return d.data.name})
+                    .join("\n")+"\nAverage Duration:"+(d.data.avgD)} 
+                </p>
+
+            </div>
+            </foreignObject>
+    }
+
+    function TreeMap(props) {
+            const { width, height, root} = props;
+
+            if(root.height==0){
+                return <g></g>
+            }
+
+            const tree = d3.treemap().tile(d3.treemapSquarify).size([width, height]).padding(2)
+                .round(true)(root).sort((a, b) => b.value - a.value);;
+
+
+            // const leaves = tree.leaves();
+            // console.log(leaves);
+
+            const parents = tree.leaves().map( d => d.parent.data.name);
+            const parentsCategories = parents.filter( (d, idx) => parents.indexOf(d) === idx );
+            const color = d3.scaleOrdinal(d3.schemePaired).domain(parentsCategories);
+            const firstLayer = tree.descendants()[0].children;
+            //console.log('here', parentsCategories)
+            
+            console.log(tree.leaves());
+
+            const cover = (event,d) =>{
+                //handle tooltip
+                const text= d.ancestors().reverse().slice(1).map((d, idx) =>  {
+                        return d.data.name})
+                    .join("\n")+"\nAvg. Days:"+(Math.round(d.data.avgD))+"\nNO:"+d.data.value;
+                d3.select('#tool').attr('class', 'tooltip').style('left', event.pageX+'px').style('top', event.pageY-28+'px').style('opacity',0.8).html(text);
+            }
+
+            const uncover = () =>{
+                d3.select('.tooltip').style('opacity', 0);
+            }
+
+            return <svg width={width} height={height+50}>
+            <g>
+                {tree.leaves().map( (d, idx) => {
+                    return <g key={idx+"treemap"} transform={`translate(${d.x0}, ${d.y0})`} >
+                        <rect width={d.x1-d.x0} height={d.y1-d.y0} stroke={"none"} 
+                            fill={color(d.parent.data.name)} opacity={0.8} onMouseDown={(event) => {cover(event, d)}} onMouseOut={uncover}/>
+                    </g>
+                })}
+                {firstLayer.map( (d, idx) => {
+                    return <g key={idx+"outerline"} transform={`translate(${d.x0}, ${d.y0})`}>
+                        <rect width={d.x1-d.x0} height={d.y1-d.y0} stroke={"black"} fill={"none"} pointerEvents={'none'}/>
+                        <text style={{fontSize:"1em"}} x={ (d.x1-d.x0)/2 } y={ (d.y1-d.y0)/2 } textAnchor={"middle"} opacity={0.4} 
+                        transform={`rotate(${(d.x1-d.x0)>(d.y1-d.y0)? 0: 90}, ${(d.x1-d.x0)/2}, ${(d.y1-d.y0)/2})`}>
+    
+                            </text>
+                        </g>
+                })}
+                <Legend x={0} y={height} colormap={color} crimetypes={parentsCategories} />
+                </g>
+            </svg>
+    }
+    
+    
+    function buildTree(data, attributes) {
+        //data: a list of objects, loaded from backend
+        //attributes: the attributes that define the hierarchy 
+        let itemArr = [];
+        if (attributes.length === 0){
+            return null;
+        }
+        let groups = d3.groups( data, d => d[attributes[0]]);
+        let levels = groups.map( d => d[0]);
+        for (let i = 0; i < levels.length; i++) {
+            let avgD = d3.mean(groups[i][1], d => d.Duration);
+            let CrimeNum = groups[i][1].length;
+            itemArr.push({name: levels[i], children: buildTree(groups[i][1], attributes.slice(1)),
+                 avgD: avgD, value: CrimeNum, group: groups[i][1]});
+        } 
+        return itemArr;
+        
+    }
+
+    function Legend(props) {
+        //Here we wantrectangles filled by color
+        const {x, y, colormap, crimetypes} = props;
+        const w = 15;
+        const h = 15;
+        const w1 = 90;
+        //create some groups for the legend
+        return <g transform = {`translate(${x}, ${y})`}>
+            {crimetypes.map( (d, idx) => {
+                return <rect key={idx+"legend"} x={idx*w1} y={0} width={w} height={h} 
+                style={{fill:colormap(d)}} />
+            } )}
+            {crimetypes.map((d, idx) => {
+                return <text style={{fontSize:"12px"}} key={idx+"legendText"} x={idx*w1+15} y={15}>
+                    {d}
+                </text>
+            })}
+        </g>
+    }
+
+    function HoverText(props) {
+            let ret = <div id="tool"></div>;
+            return ret;
+        }
+
+    function Tooltip(props) {
+        const {data, left, top, height, width, crimetypes, selectedDistrict, setSelectedDistrict} = props;
+        const Month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        const crimedata = data.filter(d=>{
+            return crimetypes.indexOf(d["Highest NIBRS/UCR Offense Description"]) != -1;
+        })
+
+        
+
+        const dataClear = crimedata.filter(d => {
+            return d["Clearance Date"].includes('-');
+        });
+
+        
+
+        dataClear.map(d => {
+            d['Duration'] = (new Date(d['Clearance Date'])-new Date(d['GO Report Date']))/86400000;
+        });
+
+        //console.log(d3.max(data, d => d.Duration))
+        //console.log(d3.min(data, d => d.Duration))
+        
+        dataClear.map(d => {d.DurationGroup = getTimeGroup(d)});
+        
+        //console.log(dataClear)
+        let attributes = ["Highest NIBRS/UCR Offense Description", "DurationGroup"];
+        //console.log(d3.mean(data, d => d.Duration))
+        //let AvgDays = d3.mean(dataClear, d => d.Duration);
+        let root = {name: "Crimes", children: buildTree(dataClear, attributes),
+            //value: data.filter( d => d.Survived == 1).length/data.length
+            avgD: d3.mean(dataClear, d => d.Duration), 
+            value: data.length};
+        root = d3.hierarchy(root)
+            .sum(d => {
+                //console.log(d.avgD);
+                // console.log(d.children ? 0 : d.value);
+                return d.children ? 0 : d.value
+
+            });
+        if (!selectedDistrict) { 
+            return <g></g>;
+        } else {
+            return <g transform={`translate(${left}, ${top})`}>
+                    <text style={{ textAnchor:'start', fontSize:'15px'}}  transform={`translate(${0}, ${-5})rotate(0)`}> District {selectedDistrict} </text>
+                    
+                    <TreeMap width={width} height={height} root={root} />
+
+                </g>
+        };  
+    }
+
+    const CrimeData = () =>{
+        const [month, setMonth] = React.useState('0');
+        const [mincolor, setMincolor] = React.useState('0');
+        const [selectedDistrict, setSelectedDistrict] = React.useState(null);
+        const [checkone, setCheckone] = React.useState(true);
+        const [checktwo, setChecktwo] = React.useState(true);
+        const [checkthree, setCheckthree] = React.useState(true);
+        const [checkfour, setCheckfour] = React.useState(true);
+        const [checkfive, setCheckfive] = React.useState(true);
+        const [checksix, setChecksix] = React.useState(true);
+        const [checkseven, setCheckseven] = React.useState(true);
+
+        const handleChangeOne = () => {
+            setCheckone(!checkone);
+        };
+        const handleChangeTwo = () => {
+            setChecktwo(!checktwo);
+        };
+        const handleChangeThree = () => {
+            setCheckthree(!checkthree);
+        };
+        const handleChangeFour = () => {
+            setCheckfour(!checkfour);
+        };
+        const handleChangeFive = () => {
+            setCheckfive(!checkfive);
+        };
+        const handleChangeSix = () => {
+            setChecksix(!checksix);
+        };
+        const handleChangeSeven = () => {
+            setCheckseven(!checkseven);
+        };
+
+        const rawData = useData(csvURL);
+        const map = useMap(mapURL);
+        const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        if (!map || !rawData) {
+                return <pre>Loading...</pre>;
+            };
+        const WIDTH = 1200;
+        const HEIGHT = 800;
+        const margin = {top:20, right:40, bottom:160, left:40, gap:40};
+        const innerWidth = WIDTH - margin.left - margin.right - margin.gap;
+        const innerHeight = HEIGHT - margin.top - margin.bottom - margin.gap;
+        const dataAll = rawData.filter(d=>d["Council District"]!=0);
+        const data = dataAll.filter(d => {
+            return d["GO Report Date"].includes(MONTH[month]);
+        })
+
+        // crime splitting
+        let crimes = dataAll.map(d=>d["Highest NIBRS/UCR Offense Description"]);
+        crimes = crimes.filter((d,idx)=>crimes.indexOf(d)===idx);
+        let crimetypes = [];
+        if(checkone){crimetypes.push(crimes[0]);}
+        if(checktwo){crimetypes.push(crimes[1]);}
+        if(checkthree){crimetypes.push(crimes[2]);}
+        if(checkfour){crimetypes.push(crimes[3]);}
+        if(checkfive){crimetypes.push(crimes[4]);}
+        if(checksix){crimetypes.push(crimes[5]);}
+        if(checkseven){crimetypes.push(crimes[6]);}
+
+        const changeHandler = (event) => {
+            setMonth(event.target.value);
+        }
+
+        const changeColorHandler = (event) => {
+            setMincolor(event.target.value);
+        }
+
+        const selectedDistrictData = data.filter(d=>{
+            return d["Council District"] == selectedDistrict
+        });
+
+        return <div>
+            <h1>Public Security in Austin -- Visualization of Crime Events</h1>
+            <div className="main">
+                <div>
+                <img src="./intro.jpg" alt="Home" className="pic"/>
+                </div>
+                <div className="monthslider">
+                <input key="slider" type='range' min='0' max='11' value={month} step='1' onChange={changeHandler}/>
+                <input key="monthText" type="text" value={MONTH[month]} readOnly/>
+                </div>
+                <input key="colorslider" className="colorslider" type='range' min='0' max='7' value={mincolor} step='1' onChange={changeColorHandler}/>
+                <div className="checkboxes">
+                    <label>
+                    <br/>
+                    <input type="checkbox" checked={checkone} onChange={handleChangeOne}/>
+                    {crimes[0]}
+                    </label>
+                    <label>
+                    <br/>
+                    <input type="checkbox" checked={checktwo} onChange={handleChangeTwo}/>
+                    {crimes[1]}
+                    </label>
+                    <label>
+                    <br/>
+                    <input type="checkbox" checked={checkthree} onChange={handleChangeThree}/>
+                    {crimes[2]}
+                    </label>
+                    <label>
+                    <br/>
+                    <input type="checkbox" checked={checkfour} onChange={handleChangeFour}/>
+                    {crimes[3]}
+                    </label>
+                    <label>
+                    <br/>
+                    <input type="checkbox" checked={checkfive} onChange={handleChangeFive}/>
+                    {crimes[4]}
+                    </label>
+                    <label>
+                    <br/>
+                    <input type="checkbox" checked={checksix} onChange={handleChangeSix}/>
+                    {crimes[5]}
+                    </label>
+                    <label>
+                    <br/>
+                    <input type="checkbox" checked={checkseven} onChange={handleChangeSeven}/>
+                    {crimes[6]}
+                    </label>
+                </div>
+            <HoverText/>
+            <svg width={WIDTH} height={HEIGHT} className={"svg"}>
+                <g>
+                    <TheMap x={margin.left} y={margin.top} height={innerHeight+margin.gap} width={innerWidth/2} data={data} map={map} selectedDistrict={selectedDistrict} setSelectedDistrict={setSelectedDistrict}/>
+
+                    <g id="heatmap"></g>
+                    <HeatMap x={margin.left+innerWidth/2+margin.gap} y={margin.top+margin.gap} height={innerHeight/4} width={innerWidth/2} data={dataAll} crimetypes={crimetypes} mincolor={mincolor}/>
+                    
+                </g>
+
+                <Tooltip data={selectedDistrictData} left={margin.left+innerWidth/2} 
+                top={innerHeight/2} 
+                crimetypes={crimetypes}
+                height={innerHeight/2} width={WIDTH/2}
+                selectedDistrict={selectedDistrict}  />
+
+            </svg>
+            </div>
+            </div>
+    }
+    ReactDOM.render( <CrimeData />, document.getElementById('root'));
+    </script>
+    </body>
+    </html>

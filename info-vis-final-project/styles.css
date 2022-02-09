@@ -1,0 +1,94 @@
+body {
+    background-color: rgba(255, 246, 125, 0.404);
+    font-family: "Poppins", sans-serif;
+}
+
+h1{
+    text-align: center;
+    margin-bottom: 3ch;
+}
+
+.monthslider{
+    transform: translate(30px,-5px);
+    position: absolute;
+}
+
+.colorslider{
+    transform: translate(580px,20px);
+    position: absolute;
+}
+
+
+.checkboxes{
+    transform: translate(1200px,30px);
+    position: absolute;
+}
+
+
+.container {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    text-align: center;
+}
+.pic{
+    height: 400px;
+    text-align: center;
+}
+
+/* .leftmost{
+    width: 12%
+}
+
+.left{
+    width: 40%;
+}
+.mid{
+    width: 6%;
+}
+.right{
+    width: 30%;
+    position: relative;
+    right: 0;
+    margin-right: 5%;
+} */
+
+.main{
+    margin-top: 5ch;
+    margin-left: 24ch;
+    width: 80%;
+}
+
+.land {
+    fill:rgb(141, 155, 136);
+} 
+.interiors {
+    fill: none;
+    stroke: #C0C0BB;
+    stroke-width: 1px;
+} 
+.boundary1 {
+    fill: #9a9e9e;
+    stroke: #C0C0BB;
+}
+div {
+    white-space: pre-wrap;
+}
+.sphere {
+    fill:rgb(150, 209, 243);
+}
+
+div.tooltip {
+    position: absolute;
+    text-align: center;
+    width: 100px;
+    height: 120px;
+    padding: 2px;
+    font: 12px sans-serif;
+    background: lightgreen;
+    border: 0px;
+    border-radius: 8px;
+    pointer-events: none;
+  }
+
+
